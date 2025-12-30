@@ -23,7 +23,6 @@ class PatientOverviewPage extends StatelessWidget {
           child: Column(
             children: [
               const SizedBox(height: 20),
-
               const Text(
                 "Doctor Portal",
                 style: TextStyle(
@@ -32,9 +31,7 @@ class PatientOverviewPage extends StatelessWidget {
                   color: Colors.blue,
                 ),
               ),
-
               const SizedBox(height: 40),
-
               const Text(
                 'Patient Overview Page',
                 style: TextStyle(
@@ -42,7 +39,6 @@ class PatientOverviewPage extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                 ),
               ),
-
               const SizedBox(height: 50),
 
               // ---------- 3 BIGGER SQUARE BUTTONS ----------
@@ -59,7 +55,6 @@ class PatientOverviewPage extends StatelessWidget {
                         MaterialPageRoute(builder: (_) => const PatientListPage()),
                       ),
                     ),
-
                     _squareButton(
                       icon: Icons.person_add,
                       label: "Add New\nPatient",
@@ -68,7 +63,6 @@ class PatientOverviewPage extends StatelessWidget {
                         MaterialPageRoute(builder: (_) => const AddNewPatientPage()),
                       ),
                     ),
-
                     _squareButton(
                       icon: Icons.medical_services,
                       label: "Pharmacist\nPage",
@@ -94,8 +88,8 @@ class PatientOverviewPage extends StatelessWidget {
     required VoidCallback onPressed,
   }) {
     return SizedBox(
-      width: 140,     // ⬅ increased from 110
-      height: 140,    // ⬅ increased from 110
+      width: 140,
+      height: 140,
       child: ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
@@ -110,7 +104,7 @@ class PatientOverviewPage extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 50), // ⬅ bigger icon
+            Icon(icon, size: 50),
             const SizedBox(height: 12),
             Text(
               label,
@@ -128,7 +122,7 @@ class PatientOverviewPage extends StatelessWidget {
 }
 
 // ===================================================================
-// Add New Patient Page (unchanged)
+// Add New Patient Page (UPDATED: add Gender field)
 // ===================================================================
 
 class AddNewPatientPage extends StatefulWidget {
@@ -147,6 +141,9 @@ class _AddNewPatientPageState extends State<AddNewPatientPage> {
   final _weight = TextEditingController();
   final _blood = TextEditingController();
 
+  
+  String? _gender;
+
   @override
   void dispose() {
     _wardRoom.dispose();
@@ -160,15 +157,18 @@ class _AddNewPatientPageState extends State<AddNewPatientPage> {
 
   void _submit() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+
     final p = Patient(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       wardRoomNo: _wardRoom.text.trim(),
       name: _name.text.trim(),
+      gender: _gender!.trim(), 
       age: _age.text.trim(),
       height: _height.text.trim(),
       weight: _weight.text.trim(),
       bloodType: _blood.text.trim(),
     );
+
     PatientDatabase.instance.addPatient(p);
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -181,6 +181,9 @@ class _AddNewPatientPageState extends State<AddNewPatientPage> {
     _height.clear();
     _weight.clear();
     _blood.clear();
+
+    // Optional reset (kept minimal)
+    //setState(() => _gender = 'Male');
   }
 
   void _home() => Navigator.of(context).popUntil((r) => r.isFirst);
@@ -206,10 +209,29 @@ class _AddNewPatientPageState extends State<AddNewPatientPage> {
                 const SizedBox(height: 24),
                 _field(_wardRoom, 'Ward Room No.'),
                 _field(_name, 'Name'),
+
+                
+                DropdownButtonFormField<String>(
+                  decoration: InputDecoration(
+                    labelText: 'Gender',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  hint: const Text('Select gender'),
+                  items: const [
+                    DropdownMenuItem(value: 'Male', child: Text('Male')),
+                    DropdownMenuItem(value: 'Female', child: Text('Female')),
+                  ],
+                  onChanged: (val) => setState(() => _gender = val),
+                  validator: (val) =>
+                      (val == null || val.trim().isEmpty) ? 'Please select Gender' : null,
+                ),
+
+                const SizedBox(height: 16),
+
                 _field(_age, 'Age', kb: TextInputType.number),
                 _field(_height, 'Height (cm)', kb: TextInputType.number),
                 _field(_weight, 'Weight (kg)', kb: TextInputType.number),
-                _field(_blood, 'Blood Type (e.g. O+, A-)'),
+                _field(_blood, 'Blood Type'),
                 const SizedBox(height: 24),
 
                 Row(children: [
@@ -259,7 +281,7 @@ class _AddNewPatientPageState extends State<AddNewPatientPage> {
 }
 
 // ===================================================================
-// Patient List Page (search bar + UI)
+// Patient List Page (search bar + UI) (UPDATED: show Gender)
 // ===================================================================
 
 class PatientListPage extends StatefulWidget {
@@ -309,7 +331,6 @@ class _PatientListPageState extends State<PatientListPage> {
                 ),
               ),
             ),
-
             Expanded(
               child: patients.isEmpty
                   ? const Center(
@@ -333,8 +354,7 @@ class _PatientListPageState extends State<PatientListPage> {
                             leading: CircleAvatar(
                               radius: 22,
                               backgroundColor: Colors.blue.shade100,
-                              child:
-                                  Icon(Icons.person, color: Colors.blue.shade700),
+                              child: Icon(Icons.person, color: Colors.blue.shade700),
                             ),
                             title: Text(
                               p.name,
@@ -343,6 +363,7 @@ class _PatientListPageState extends State<PatientListPage> {
                             ),
                             subtitle: Text(
                               'Ward: ${p.wardRoomNo}\n'
+                              'Gender: ${p.gender}\n'
                               'Age: ${p.age} | ${p.height} cm | ${p.weight} kg\n'
                               'Blood Type: ${p.bloodType}',
                               style: const TextStyle(color: Colors.black54),
@@ -369,7 +390,7 @@ class _PatientListPageState extends State<PatientListPage> {
 }
 
 // ===================================================================
-// Patient Actions Page
+// Patient Actions Page (UPDATED: show Gender)
 // ===================================================================
 
 class PatientActionsPage extends StatelessWidget {
@@ -408,6 +429,7 @@ class PatientActionsPage extends StatelessWidget {
                                 fontSize: 22, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 12),
                         Text('Ward Room No.: ${patient.wardRoomNo}'),
+                        Text('Gender: ${patient.gender}'),
                         Text('Age: ${patient.age}'),
                         Text('Height: ${patient.height} cm'),
                         Text('Weight: ${patient.weight} kg'),
@@ -416,7 +438,6 @@ class PatientActionsPage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 32),
-
               _optionBtn(
                 context,
                 "Patient's Current Condition",
@@ -426,22 +447,17 @@ class PatientActionsPage extends StatelessWidget {
                       builder: (_) => CurrentConditionPage(patient: patient)),
                 ),
               ),
-
               const SizedBox(height: 16),
-
               _optionBtn(
                 context,
                 "Patient's History",
                 () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (_) =>
-                          DoctorPatientHistoryPage(patient: patient)),
+                      builder: (_) => DoctorPatientHistoryPage(patient: patient)),
                 ),
               ),
-
               const Spacer(),
-
               _optionBtn(context, "Home", home),
             ],
           ),
@@ -450,8 +466,7 @@ class PatientActionsPage extends StatelessWidget {
     );
   }
 
-  Widget _optionBtn(
-      BuildContext context, String text, VoidCallback onPressed) {
+  Widget _optionBtn(BuildContext context, String text, VoidCallback onPressed) {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
@@ -470,3 +485,4 @@ class PatientActionsPage extends StatelessWidget {
     );
   }
 }
+

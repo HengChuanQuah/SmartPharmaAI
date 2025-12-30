@@ -47,7 +47,7 @@ DoseCalcResult calculateDemoDose({
     final mg = (15 * w).round();
     final capped = mg > 1000 ? 1000 : mg;
     return DoseCalcResult(
-      doseText: '${capped} mg PO/IV every 6h PRN',
+      doseText: '$capped mg PO/IV every 6h PRN',
       explanation:
           'Demo rule: paracetamol ~15 mg/kg q6h (cap 1 g). Using ${w.toStringAsFixed(0)} kg.',
     );

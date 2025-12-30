@@ -41,6 +41,8 @@ class _RefreshHistoryPageState extends State<RefreshHistoryPage> {
         urineOutput: '-',
         creatinine: '-',
         egfr: '-',
+        allergy: '-',
+        renalFunction: '-',
         lactate: '-',
         wbc: '-',
         condition: '-',
@@ -58,6 +60,7 @@ class _RefreshHistoryPageState extends State<RefreshHistoryPage> {
       );
     }
   }
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(

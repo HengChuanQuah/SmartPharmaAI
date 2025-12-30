@@ -97,7 +97,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                 ),
               ),
               hint: const Text("Select an issue category"),
-              value: _selectedCategory,
+              initialValue: _selectedCategory,
               items: _issueCategories.map((String category) {
                 return DropdownMenuItem<String>(
                   value: category,

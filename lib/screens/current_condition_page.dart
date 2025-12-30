@@ -22,6 +22,11 @@ class _CurrentConditionPageState extends State<CurrentConditionPage> {
   final _urine = TextEditingController();
   final _cr = TextEditingController();
   final _egfr = TextEditingController();
+
+  // ✅ NEW: allergy + renal function
+  final _allergy = TextEditingController();
+  final _renalFn = TextEditingController();
+
   final _lact = TextEditingController();
   final _wbc = TextEditingController();
   final _cond = TextEditingController();
@@ -36,6 +41,11 @@ class _CurrentConditionPageState extends State<CurrentConditionPage> {
     _urine.dispose();
     _cr.dispose();
     _egfr.dispose();
+
+    // ✅ NEW
+    _allergy.dispose();
+    _renalFn.dispose();
+
     _lact.dispose();
     _wbc.dispose();
     _cond.dispose();
@@ -56,6 +66,11 @@ class _CurrentConditionPageState extends State<CurrentConditionPage> {
       urineOutput: _urine.text.trim(),
       creatinine: _cr.text.trim(),
       egfr: _egfr.text.trim(),
+
+      // ✅ NEW: these will be fed into AI prompt later
+      allergy: _allergy.text.trim(),
+      renalFunction: _renalFn.text.trim(),
+
       lactate: _lact.text.trim(),
       wbc: _wbc.text.trim(),
       condition: _cond.text.trim(),
@@ -68,8 +83,7 @@ class _CurrentConditionPageState extends State<CurrentConditionPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            MedicationRecommendationPage(patient: widget.patient, vitals: v),
+        builder: (_) => MedicationRecommendationPage(patient: widget.patient, vitals: v),
       ),
     );
   }
@@ -94,16 +108,17 @@ class _CurrentConditionPageState extends State<CurrentConditionPage> {
   Widget build(BuildContext context) {
     final p = widget.patient;
     return Scaffold(
-      appBar:
-          AppBar(title: const Text("Patient's Current Condition"), centerTitle: true),
+      appBar: AppBar(
+        title: const Text("Patient's Current Condition"),
+        centerTitle: true,
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Form(
             key: _formKey,
             child: SingleChildScrollView(
-              child:
-                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 const Center(
                   child: Text(
                     "Patient's Current Condition",
@@ -116,18 +131,19 @@ class _CurrentConditionPageState extends State<CurrentConditionPage> {
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Name: ${p.name}',
-                              style: const TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 4),
-                          Text('Ward Room No.: ${p.wardRoomNo}'),
-                          Text('Age: ${p.age}'),
-                          Text('Height: ${p.height} cm'),
-                          Text('Weight: ${p.weight} kg'),
-                          Text('Blood Type: ${p.bloodType}'),
-                        ]),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Name: ${p.name}',
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        Text('Ward Room No.: ${p.wardRoomNo}'),
+                        Text('Gender: ${p.gender}'),
+                        Text('Age: ${p.age}'),
+                        Text('Height: ${p.height} cm'),
+                        Text('Weight: ${p.weight} kg'),
+                        Text('Blood Type: ${p.bloodType}'),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -135,11 +151,15 @@ class _CurrentConditionPageState extends State<CurrentConditionPage> {
                 _vField(_temp, 'Temperature (°C)', kb: TextInputType.number),
                 _vField(_bp, 'Blood Pressure (e.g. 120/80 mmHg)'),
                 _vField(_hr, 'Heart Rate (bpm)', kb: TextInputType.number),
-                _vField(_spo2, 'Oxygen Saturation (SpO₂ %)',
-                    kb: TextInputType.number),
+                _vField(_spo2, 'Oxygen Saturation (SpO₂ %)', kb: TextInputType.number),
                 _vField(_urine, 'Urine Output (mL/hr)', kb: TextInputType.number),
                 _vField(_cr, 'Creatinine (mg/dL)', kb: TextInputType.number),
                 _vField(_egfr, 'eGFR (mL/min/1.73m²)', kb: TextInputType.number),
+
+                // ✅ NEW fields (critical for verification)
+                _vField(_allergy, 'Allergy details'),
+                _vField(_renalFn, 'Renal function'),
+
                 _vField(_lact, 'Lactate (mmol/L)', kb: TextInputType.number),
                 _vField(_wbc, 'WBC (10⁹/L)', kb: TextInputType.number),
                 TextFormField(
@@ -183,3 +203,4 @@ class _CurrentConditionPageState extends State<CurrentConditionPage> {
     );
   }
 }
+

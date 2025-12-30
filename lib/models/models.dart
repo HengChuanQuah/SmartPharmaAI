@@ -7,6 +7,7 @@ class Patient {
   final String height;
   final String weight;
   final String bloodType;
+  final String gender;
 
   Patient({
     required this.id,
@@ -16,6 +17,7 @@ class Patient {
     required this.height,
     required this.weight,
     required this.bloodType,
+    required this.gender,
   });
 
   // Serialization
@@ -27,6 +29,7 @@ class Patient {
     'height': height,
     'weight': weight,
     'bloodType': bloodType,
+    'Gender': gender,
   };
 
   factory Patient.fromJson(Map<String, dynamic> json) => Patient(
@@ -37,6 +40,7 @@ class Patient {
     height: json['height'] ?? '',
     weight: json['weight'] ?? '',
     bloodType: json['bloodType'] ?? '',
+    gender: json['Gender'] ?? 'Unknown',
   );
 }
 
@@ -50,6 +54,8 @@ class PatientVitals {
   final String urineOutput;
   final String creatinine;
   final String egfr;
+  final String allergy;
+  final String renalFunction; 
   final String lactate;
   final String wbc;
   final String condition;
@@ -63,6 +69,8 @@ class PatientVitals {
     required this.urineOutput,
     required this.creatinine,
     required this.egfr,
+    this.allergy = '',
+    required this.renalFunction,
     required this.lactate,
     required this.wbc,
     required this.condition,
@@ -78,6 +86,8 @@ class PatientVitals {
     'urineOutput': urineOutput,
     'creatinine': creatinine,
     'egfr': egfr,
+    'allergy': allergy,
+    'renalFunction': renalFunction,
     'lactate': lactate,
     'wbc': wbc,
     'condition': condition,
@@ -92,6 +102,8 @@ class PatientVitals {
     urineOutput: json['urineOutput'] ?? '',
     creatinine: json['creatinine'] ?? '',
     egfr: json['egfr'] ?? '',
+    allergy: json['allergy'] ?? '',
+    renalFunction: json['renalFunction'] ?? '',
     lactate: json['lactate'] ?? '',
     wbc: json['wbc'] ?? '',
     condition: json['condition'] ?? '',

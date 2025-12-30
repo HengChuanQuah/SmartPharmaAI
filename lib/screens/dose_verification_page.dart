@@ -40,6 +40,8 @@ class _DoseVerificationPageState extends State<DoseVerificationPage> {
           urineOutput: '-',
           creatinine: '-',
           egfr: '-',
+          allergy: '-',
+          renalFunction: '-',
           lactate: '-',
           wbc: '-',
           condition: '-',

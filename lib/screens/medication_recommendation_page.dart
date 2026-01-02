@@ -41,6 +41,13 @@ class _MedicationRecommendationPageState
   // Small helpers (minimal changes)
   // -----------------------------
 
+  /// ✅ NEW: parse patient age into int for backend section selection (NAG A/B).
+  /// Your Patient.age might be stored as String, so we safely parse it.
+  int? _patientAgeAsInt() {
+    final raw = widget.patient.age.toString().trim();
+    return int.tryParse(raw);
+  }
+
   /// Removes common markdown bold markers like **Verification:**
   String _stripMarkdownLabels(String text) {
     return text.replaceAll('**', '').trim();
@@ -105,7 +112,6 @@ class _MedicationRecommendationPageState
   }
 
   /// Build the natural-language prompt that gets sent to smartpharmAI.py
-  /// (Includes age explicitly + forces short output format)
   String _buildSmartPharmaPrompt(String doctorMedicine) {
     final p = widget.patient;
     final v = widget.vitals;
@@ -168,16 +174,17 @@ Citation: <[1] source, [2] source>
 
     final prompt = _buildSmartPharmaPrompt(text);
 
+    // ✅ NEW: send structured age to backend so Python can select NAG A/B correctly
+    final ageInt = _patientAgeAsInt();
+
     try {
       // Call Python SmartPharma backend
-      final resp = await _api.verifyPrescription(prompt);
+      // ✅ IMPORTANT: update smartpharma_api.dart so verifyPrescription accepts age
+      final resp = await _api.verifyPrescription(prompt, age: ageInt);
 
-      // Keep UI logic unchanged: store the answer in explanation,
-      // but format it to your shorter 4-line structure if possible.
       final shortAnswer = _formatShortAiAnswer(resp.answer);
 
       final result = MedicineCheckResult(
-        // Use robust parsing here so markdown/duplicate Verification lines won't break it.
         isCorrect: _isDiagnosisAccurateFromAnswer(resp.answer),
         explanation: shortAnswer,
         suggestedMedicines: const [],
@@ -187,7 +194,6 @@ Citation: <[1] source, [2] source>
         _checkResult = result;
       });
     } catch (e) {
-      // Fallback to local demo rules if backend fails
       setState(() {
         _errorMessage =
             'Failed to contact SmartPharma AI backend.\nUsing local demo rules instead.\nError: $e';
@@ -303,11 +309,8 @@ Citation: <[1] source, [2] source>
             _info('Urine Output', '${v.urineOutput} mL/hr'),
             _info('Creatinine', '${v.creatinine} mg/dL'),
             _info('eGFR', '${v.egfr} mL/min/1.73m²'),
-
-            // ✅ Keep your existing new fields
             _info('Allergy', v.allergy),
             _info('Renal function', v.renalFunction),
-
             _info('Lactate', '${v.lactate} mmol/L'),
             _info('WBC', '${v.wbc} ×10⁹/L'),
             const SizedBox(height: 12),
@@ -383,10 +386,7 @@ Citation: <[1] source, [2] source>
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
-
-              // Display the short formatted answer
               Text(_checkResult!.explanation),
-
               if (!_checkResult!.isCorrect &&
                   _checkResult!.suggestedMedicines.isNotEmpty) ...[
                 const SizedBox(height: 16),

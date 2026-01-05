@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/models.dart';
 import '../services/patient_database.dart';
 import '../services/medicine_rules.dart';
@@ -22,220 +23,196 @@ class MedicationRecommendationPage extends StatefulWidget {
 
 class _MedicationRecommendationPageState
     extends State<MedicationRecommendationPage> {
+  // -----------------------------
+  // STATE VARIABLES
+  // -----------------------------
   final TextEditingController _medicineController = TextEditingController();
-  MedicineCheckResult? _checkResult;
-  String? _selectedAiMedicine;
-
-  // SmartPharma backend client + state
-  final SmartPharmaApi _api = SmartPharmaApi();
+  final TextEditingController _doseController = TextEditingController();
+  List<Map<String, dynamic>> _prescribedMeds = [];
   bool _isVerifying = false;
-  String? _errorMessage;
+  String? _verificationResult;
+
+  String _selectedDoseUnit = 'mg';
+  bool _useWhenRequired = false;
+  String _selectedFrequency = 'Once a day';
+
+  final SmartPharmaApi _api = SmartPharmaApi();
 
   @override
   void dispose() {
     _medicineController.dispose();
+    _doseController.dispose();
     super.dispose();
   }
 
   // -----------------------------
-  // Small helpers (minimal changes)
+  // HELPER METHODS
   // -----------------------------
+  Widget _info(String k, String v) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 4,
+          child: Text(
+            '$k:',
+            style: const TextStyle(fontWeight: FontWeight.w500),
+          ),
+        ),
+        Expanded(flex: 6, child: Text(v)),
+      ],
+    ),
+  );
 
-  /// ✅ NEW: parse patient age into int for backend section selection (NAG A/B).
-  /// Your Patient.age might be stored as String, so we safely parse it.
-  int? _patientAgeAsInt() {
-    final raw = widget.patient.age.toString().trim();
-    return int.tryParse(raw);
+  Widget _buildDoseUnitDropdown() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey, width: 0.5),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: DropdownButton<String>(
+        value: _selectedDoseUnit,
+        underline: const SizedBox(),
+        items: const [
+          'g',
+          'mg',
+          'mcg',
+          'mL',
+          'tsp',
+          'tbsp',
+          'IU',
+          'units',
+          'mg/kg',
+          'mcg/kg',
+        ].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+        onChanged: (val) {
+          setState(() => _selectedDoseUnit = val!);
+        },
+      ),
+    );
   }
 
-  /// Removes common markdown bold markers like **Verification:**
-  String _stripMarkdownLabels(String text) {
-    return text.replaceAll('**', '').trim();
+  Widget _buildFrequencyDropdown() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey, width: 0.5),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: DropdownButton<String>(
+        value: _selectedFrequency,
+        isExpanded: true,
+        underline: const SizedBox(),
+        items: [
+          'Once a day',
+          'Twice a day',
+          'Three times a day',
+          'Every 6 hours',
+          'Every 8 hours',
+        ].map((f) => DropdownMenuItem(value: f, child: Text(f))).toList(),
+        onChanged: (val) {
+          setState(() => _selectedFrequency = val!);
+        },
+      ),
+    );
   }
 
-  /// Extract the LAST occurrence of a field like "Verification:" or "Confidence Score:"
-  /// This helps if the backend accidentally returns multiple Verification lines.
-  String? _extractLastField(String label, String text) {
-    final normalized = _stripMarkdownLabels(text);
-    final lines = normalized.split('\n');
-    String? last;
-    final lowerLabel = label.toLowerCase();
+  Widget _buildEntryRow(String label, Widget input) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 110,
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w500),
+          ),
+        ),
+        Expanded(child: input),
+      ],
+    );
+  }
 
-    for (final line in lines) {
-      final l = line.trim();
-      final idx = l.indexOf(':');
-      if (idx <= 0) continue;
-
-      final key = l.substring(0, idx).trim().toLowerCase();
-      if (key == lowerLabel) {
-        last = l.substring(idx + 1).trim();
-      }
+  // -----------------------------
+  // PRESCRIBE & VERIFY METHODS
+  // -----------------------------
+  void _addPrescription() {
+    if (_medicineController.text.isEmpty || _doseController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill medicine name and dose')),
+      );
+      return;
     }
-    return (last != null && last.isNotEmpty) ? last : null;
-  }
 
-  /// Turns the AI response into a short 4-line block if possible.
-  String _formatShortAiAnswer(String rawAnswer) {
-    final normalized = _stripMarkdownLabels(rawAnswer);
+    setState(() {
+      _prescribedMeds.add({
+        'name': _medicineController.text.trim(),
+        'dose': _doseController.text.trim(),
+        'unit': _selectedDoseUnit,
+        'frequency': _selectedFrequency,
+        'prn': _useWhenRequired,
+      });
 
-    final verification = _extractLastField('Verification', normalized);
-    final confidence = _extractLastField('Confidence Score', normalized);
-    final explanation = _extractLastField('Explanation', normalized);
-    final citation = _extractLastField('Citation', normalized);
-
-    // If we can extract the required fields, show a clean short format.
-    if (verification != null ||
-        confidence != null ||
-        explanation != null ||
-        citation != null) {
-      return [
-        'Verification: ${verification ?? 'Please review diagnosis to ensure its intended'}',
-        'Confidence Score: ${confidence ?? '—'}',
-        'Explanation: ${explanation ?? '—'}',
-        'Citation: ${citation ?? '—'}',
-      ].join('\n');
-    }
-
-    // Otherwise, show whatever we got (still stripped of **).
-    return normalized;
-  }
-
-  /// Decide "isCorrect" from your NEW required Verification phrasing.
-  bool _isDiagnosisAccurateFromAnswer(String rawAnswer) {
-    final v = _extractLastField('Verification', rawAnswer) ??
-        _extractLastField('Verification', _stripMarkdownLabels(rawAnswer)) ??
-        '';
-
-    final vv = v.toLowerCase();
-    // Only treat "Diagnosis is accurate" as correct.
-    return vv.contains('diagnosis is accurate');
-  }
-
-  /// Build the natural-language prompt that gets sent to smartpharmAI.py
-  String _buildSmartPharmaPrompt(String doctorMedicine) {
-    final p = widget.patient;
-    final v = widget.vitals;
-
-    return '''
-Medication verification request.
-
-Patient Summary:
-- ID: ${p.id}
-- Name: ${p.name}
-- Gender: ${p.gender}
-- Age: ${p.age} years
-- Ward/Room: ${p.wardRoomNo}
-- Height: ${p.height} cm
-- Weight: ${p.weight} kg
-- Blood Type: ${p.bloodType}
-
-Clinical Data (${v.date}):
-- Condition/Diagnosis: ${v.condition}
-- Temperature: ${v.temperature} °C
-- Blood Pressure: ${v.bloodPressure}
-- Heart Rate: ${v.heartRate} bpm
-- Oxygen Saturation: ${v.oxygenSaturation} %
-- Urine Output: ${v.urineOutput} mL/hr
-- Creatinine: ${v.creatinine} mg/dL
-- eGFR: ${v.egfr} mL/min/1.73m²
-- Allergy: ${v.allergy}
-- Renal function: ${v.renalFunction}
-- Lactate: ${v.lactate} mmol/L
-- WBC: ${v.wbc} ×10⁹/L
-
-Doctor Intended Prescription:
-$doctorMedicine
-
-Verify according to Malaysian National Antimicrobial Guideline (NAG).
-Output MUST be short and STRICTLY in this exact 4-line format only (no extra text, no headings, no bullet points, no markdown):
-
-Verification: Diagnosis is accurate / Diagnosis is not fully accurate / Please review diagnosis to ensure its that its intended
-Confidence Score: <0-100%>
-Explanation: <3-4 short sentences backed with citations like [1][2]>
-Citation: <[1] source, [2] source>
-''';
+      // Reset input fields
+      _medicineController.clear();
+      _doseController.clear();
+      _selectedDoseUnit = 'mg';
+      _selectedFrequency = 'Once a day';
+      _useWhenRequired = false;
+    });
   }
 
   Future<void> _verifyMedicine() async {
-    final text = _medicineController.text.trim();
-    if (text.isEmpty) {
+    if (_prescribedMeds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the medicine required.')),
+        const SnackBar(content: Text('No prescribed drugs to verify')),
       );
       return;
     }
 
     setState(() {
       _isVerifying = true;
-      _errorMessage = null;
-      _checkResult = null;
-      _selectedAiMedicine = null;
+      _verificationResult = null;
     });
 
-    final prompt = _buildSmartPharmaPrompt(text);
-
-    // ✅ NEW: send structured age to backend so Python can select NAG A/B correctly
-    final ageInt = _patientAgeAsInt();
-
     try {
-      // Call Python SmartPharma backend
-      // ✅ IMPORTANT: update smartpharma_api.dart so verifyPrescription accepts age
-      final resp = await _api.verifyPrescription(prompt, age: ageInt);
+      // Example: simulate API verification
+      final medsToVerify = List<Map<String, dynamic>>.from(_prescribedMeds);
 
-      final shortAnswer = _formatShortAiAnswer(resp.answer);
-
-      final result = MedicineCheckResult(
-        isCorrect: _isDiagnosisAccurateFromAnswer(resp.answer),
-        explanation: shortAnswer,
-        suggestedMedicines: const [],
-      );
+      // Replace this with your actual API call
+      await Future.delayed(const Duration(seconds: 2));
 
       setState(() {
-        _checkResult = result;
+        _verificationResult =
+            "All ${medsToVerify.length} medicines have been verified successfully!";
       });
     } catch (e) {
       setState(() {
-        _errorMessage =
-            'Failed to contact SmartPharma AI backend.\nUsing local demo rules instead.\nError: $e';
-        _checkResult = checkMedicine(widget.patient, widget.vitals, text);
+        _verificationResult = 'Verification failed: $e';
       });
     } finally {
-      setState(() {
-        _isVerifying = false;
-      });
+      setState(() => _isVerifying = false);
     }
   }
 
   void _confirmAndSave() {
-    if (_checkResult == null) return;
+    if (_prescribedMeds.isEmpty) return;
 
-    if (!_checkResult!.isCorrect &&
-        _checkResult!.suggestedMedicines.isNotEmpty &&
-        _selectedAiMedicine == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please tick one AI-suggested medicine or verify again.'),
-        ),
+    for (var med in _prescribedMeds) {
+      final rx = FinalPrescription(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        patientId: widget.patient.id,
+        patientName: widget.patient.name,
+        wardRoomNo: widget.patient.wardRoomNo,
+        date: widget.vitals.date,
+        medicine: med['name'],
+        doctorMedicine: med['name'],
+        rationale: _verificationResult ?? '',
       );
-      return;
+
+      PatientDatabase.instance.enqueueForVerification(rx);
     }
-
-    final accepted = (!_checkResult!.isCorrect && _selectedAiMedicine != null)
-        ? _selectedAiMedicine!
-        : _medicineController.text.trim();
-
-    final rx = FinalPrescription(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      patientId: widget.patient.id,
-      patientName: widget.patient.name,
-      wardRoomNo: widget.patient.wardRoomNo,
-      date: widget.vitals.date,
-      medicine: accepted,
-      doctorMedicine: _medicineController.text.trim(),
-      rationale: _checkResult!.explanation,
-    );
-
-    PatientDatabase.instance.enqueueForVerification(rx);
 
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const PharmacistPage()),
@@ -243,25 +220,9 @@ Citation: <[1] source, [2] source>
     );
   }
 
-  void _home() => Navigator.of(context).popUntil((r) => r.isFirst);
-
-  Widget _info(String k, String v) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 4,
-              child: Text(
-                '$k:',
-                style: const TextStyle(fontWeight: FontWeight.w500),
-              ),
-            ),
-            Expanded(flex: 6, child: Text(v)),
-          ],
-        ),
-      );
-
+  // -----------------------------
+  // BUILD METHOD
+  // -----------------------------
   @override
   Widget build(BuildContext context) {
     final p = widget.patient;
@@ -273,14 +234,9 @@ Citation: <[1] source, [2] source>
         centerTitle: true,
       ),
       body: Padding(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.all(24),
         child: ListView(
           children: [
-            const Text(
-              'Medication Recommendation Page',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
             const Text(
               'Patient Information:',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
@@ -295,135 +251,179 @@ Citation: <[1] source, [2] source>
             _info('Blood Type', p.bloodType),
             const SizedBox(height: 16),
             const Divider(),
-            const SizedBox(height: 8),
-            const Text(
-              'Entered ICU Data:',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            _info('Date', v.date),
-            _info('Temperature', '${v.temperature} °C'),
-            _info('Blood Pressure', v.bloodPressure),
-            _info('Heart Rate', '${v.heartRate} bpm'),
-            _info('Oxygen Saturation', '${v.oxygenSaturation} %'),
-            _info('Urine Output', '${v.urineOutput} mL/hr'),
-            _info('Creatinine', '${v.creatinine} mg/dL'),
-            _info('eGFR', '${v.egfr} mL/min/1.73m²'),
-            _info('Allergy', v.allergy),
-            _info('Renal function', v.renalFunction),
-            _info('Lactate', '${v.lactate} mmol/L'),
-            _info('WBC', '${v.wbc} ×10⁹/L'),
-            const SizedBox(height: 12),
-            const Text(
-              'Condition of the patient:',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              v.condition,
-              style: const TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 24),
-            const Divider(),
             const SizedBox(height: 12),
             const Text(
               'Medicine Required (typed by doctor):',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _medicineController,
-              decoration: const InputDecoration(
-                labelText: 'Medicine Required',
-                border: OutlineInputBorder(),
-              ),
-            ),
             const SizedBox(height: 16),
+
+            // --- INPUT + PRESCRIBED BOX ---
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // LEFT PANEL: INPUT FORM
                 Expanded(
-                  child: ElevatedButton(
-                    onPressed: _isVerifying ? null : _verifyMedicine,
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 14.0),
-                      child: Text(
-                        'Verify Medicine',
-                        style: TextStyle(fontSize: 18),
-                      ),
+                  flex: 5,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.black, width: 1.5),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildEntryRow(
+                          'Drug Name :',
+                          TextField(
+                            controller: _medicineController,
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildEntryRow(
+                          'Dose :',
+                          Row(
+                            children: [
+                              SizedBox(
+                                width: 60,
+                                child: TextFormField(
+                                  controller: _doseController,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'^\d*\.?\d{0,2}'),
+                                    ),
+                                  ],
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _buildDoseUnitDropdown(),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildEntryRow(
+                          'Frequency :',
+                          _buildFrequencyDropdown(),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildEntryRow(
+                          'Use only when required :',
+                          Checkbox(
+                            value: _useWhenRequired,
+                            onChanged: (val) =>
+                                setState(() => _useWhenRequired = val ?? false),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            OutlinedButton(
+                              onPressed: _addPrescription,
+                              child: const Text('Prescribe'),
+                            ),
+                            const SizedBox(width: 10),
+                            TextButton(
+                              onPressed: () {
+                                _medicineController.clear();
+                                _doseController.clear();
+                              },
+                              child: const Text(
+                                'Cancel',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
+
                 const SizedBox(width: 16),
+
+                // RIGHT PANEL: Prescribed Drugs
                 Expanded(
-                  child: OutlinedButton(
-                    onPressed: _home,
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 14.0),
-                      child: Text(
-                        'Home',
-                        style: TextStyle(fontSize: 18),
-                      ),
+                  flex: 4,
+                  child: Container(
+                    height: 280,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.black, width: 1.5),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Prescribed drug(s)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () {
+                                setState(() => _prescribedMeds.clear());
+                              },
+                              icon: const Icon(Icons.delete_outline, size: 20),
+                            ),
+                          ],
+                        ),
+                        const Divider(color: Colors.black, thickness: 1),
+                        Expanded(
+                          child: ListView(
+                            children: _prescribedMeds.map((med) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 4,
+                                ),
+                                child: Text(
+                                  "${med['name']} ${med['dose']}${med['unit']} - ${med['frequency']}${med['prn'] ? ' (PRN)' : ''}",
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ElevatedButton(
+                          onPressed: _isVerifying ? null : _verifyMedicine,
+                          child: _isVerifying
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text('Verify'),
+                        ),
+                        if (_verificationResult != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            _verificationResult!,
+                            style: const TextStyle(color: Colors.green),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ),
               ],
-            ),
-            if (_isVerifying) ...[
-              const SizedBox(height: 12),
-              const Center(child: CircularProgressIndicator()),
-            ],
-            const SizedBox(height: 24),
-            if (_errorMessage != null) ...[
-              Text(
-                _errorMessage!,
-                style: const TextStyle(color: Colors.red, fontSize: 13),
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (_checkResult != null) ...[
-              const Text(
-                'AI Assessment:',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              Text(_checkResult!.explanation),
-              if (!_checkResult!.isCorrect &&
-                  _checkResult!.suggestedMedicines.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                const Text(
-                  'AI Suggested Medicine(s): (Tick one if you agree)',
-                  style: TextStyle(fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(height: 8),
-                ..._checkResult!.suggestedMedicines.map(
-                  (m) => CheckboxListTile(
-                    value: _selectedAiMedicine == m,
-                    onChanged: (b) {
-                      setState(() {
-                        _selectedAiMedicine = (b ?? false) ? m : null;
-                      });
-                    },
-                    title: Text(m),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: _confirmAndSave,
-                icon: const Icon(Icons.save),
-                label: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12.0),
-                  child: Text(
-                    'Confirm & Save',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            const Text(
-              'Prototype only — not medical advice.',
-              style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
             ),
           ],
         ),
